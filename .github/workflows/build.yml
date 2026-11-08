@@ -1,0 +1,67 @@
+name: Build VHOST
+
+# Runs when VHOST.zip is uploaded to the repo.
+# It unpacks the zip, builds the signed APK and publishes it as a GitHub Release,
+# which is what the in-app updater looks at.
+on:
+  push:
+    paths:
+      - "VHOST.zip"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vhost-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Get the repo
+        uses: actions/checkout@v4
+
+      - name: Unpack VHOST.zip
+        run: |
+          if [ ! -f VHOST.zip ]; then
+            echo "VHOST.zip was not found in the repo root."
+            exit 1
+          fi
+          mkdir proj
+          unzip -q VHOST.zip -d proj
+          ls -la proj
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Build the APK
+        working-directory: proj
+        run: gradle --no-daemon assembleRelease -Pvcode=${{ github.run_number }}
+
+      - name: Name the APK
+        run: cp proj/app/build/outputs/apk/release/app-release.apk VHOST.apk
+
+      - name: Keep a copy in Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: VHOST-apk
+          path: VHOST.apk
+
+      - name: Publish release for the in-app updater
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: VHOST build ${{ github.run_number }}
+          body_path: proj/RELEASE_NOTES.md
+          files: VHOST.apk
